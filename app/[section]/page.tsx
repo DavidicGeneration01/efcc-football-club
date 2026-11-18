@@ -4,6 +4,8 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PublicGallery } from "@/components/gallery/public-gallery";
 
+export const dynamic = "force-dynamic";
+
 const pages: Record<string, { title: string; intro: string; label: string }> = {
   club: { title: "The club", intro: "Discover the identity, people and ambitions of EFCC Football Club.", label: "OUR IDENTITY" },
   team: { title: "First team", intro: "Meet the players and technical staff representing EFCC Football Club.", label: "THE SQUAD" },
@@ -37,7 +39,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
         </div>
       </section>
       <section className="section">
-        {section === "gallery" ? (
+        {section === "gallery" || section === "media" ? (
           <Suspense fallback={<p className="section-content text-sm text-neutral-600" role="status">Loading the EFCC photo gallery...</p>}>
             <PublicGallery />
           </Suspense>

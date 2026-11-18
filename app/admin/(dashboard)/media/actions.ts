@@ -177,6 +177,7 @@ export async function uploadMediaAction(
 
     try {
       revalidatePath("/gallery");
+      revalidatePath("/media");
     } catch (error) {
       console.error("Media was saved, but gallery revalidation failed.", error);
       return {
@@ -304,5 +305,6 @@ export async function changeMediaPublicationAction(formData: FormData) {
 
   revalidatePath("/admin/media");
   revalidatePath("/gallery");
+  revalidatePath("/media");
   redirect(`/admin/media?notice=${published ? "published" : "unpublished"}`);
 }
