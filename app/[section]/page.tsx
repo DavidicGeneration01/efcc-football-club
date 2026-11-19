@@ -10,7 +10,6 @@ const pages: Record<string, { title: string; intro: string; label: string }> = {
   club: { title: "The club", intro: "Discover the identity, people and ambitions of EFCC Football Club.", label: "OUR IDENTITY" },
   team: { title: "First team", intro: "Meet the players and technical staff representing EFCC Football Club.", label: "THE SQUAD" },
   matches: { title: "Match centre", intro: "Fixtures, results, match reports and updates from the team.", label: "FOLLOW THE ACTION" },
-  news: { title: "Latest news", intro: "Official announcements, club stories and matchday coverage.", label: "THE LATEST" },
   transfers: { title: "Transfers", intro: "Confirmed player arrivals, departures and club announcements.", label: "SQUAD UPDATES" },
   media: { title: "Media centre", intro: "Videos, interviews, match highlights and live coverage.", label: "WATCH & EXPLORE" },
   gallery: { title: "Photo gallery", intro: "Moments from matches, training, tournaments and club events.", label: "THROUGH THE LENS" },

@@ -2,14 +2,24 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SectionHeading } from "@/components/section-heading";
+import { NewsCard } from "@/components/news/news-card";
+import { hasSupabaseEnv } from "@/lib/supabase/env";
+import { getLatestPublishedNews, NewsQueryError } from "@/lib/news/queries";
 
-const news = [
-  { category: "CLUB NEWS", title: "A new chapter begins for EFCC Football Club", summary: "Updates from the club will appear here once the editorial team publishes its first story.", image: "CLUB UPDATE" },
-  { category: "FIRST TEAM", title: "Meet the squad representing EFCC", summary: "Player profiles, team announcements and updates from the first team.", image: "THE SQUAD" },
-  { category: "MATCH CENTRE", title: "Follow every fixture, result and match report", summary: "Stay connected to the club throughout the football calendar.", image: "MATCHDAY" }
-];
+export default async function HomePage() {
+  let latestNews: Awaited<ReturnType<typeof getLatestPublishedNews>> = [];
+  let newsUnavailable = !hasSupabaseEnv();
 
-export default function HomePage() {
+  if (!newsUnavailable) {
+    try {
+      latestNews = await getLatestPublishedNews(3);
+    } catch (error) {
+      if (!(error instanceof NewsQueryError)) throw error;
+      console.error("Could not load published news for the homepage.", error);
+      newsUnavailable = true;
+    }
+  }
+
   return (
     <>
       <SiteHeader />
@@ -24,14 +34,17 @@ export default function HomePage() {
         </section>
 
         <section className="section">
-          <SectionHeading eyebrow="The latest from EFCC" title="Club headlines" hrefLabel="All news" />
+          <SectionHeading eyebrow="The latest from EFCC" title="Club headlines" hrefLabel="All news" href="/news" />
           <div className="news-grid">
-            {news.map((item) => (
-              <article className="news-card" key={item.title}>
-                <div className="news-image" role="img" aria-label="Placeholder for official EFCC club photography">{item.image}</div>
-                <div className="news-copy"><div className="news-category">{item.category}</div><h3>{item.title}</h3><p>{item.summary}</p></div>
-              </article>
-            ))}
+            {latestNews.length ? latestNews.map((article, index) => (
+              <NewsCard key={article.id} article={article} featured={index === 0} />
+            )) : (
+              <div className="col-span-full border border-dashed border-neutral-300 bg-neutral-50 p-7 text-sm leading-6 text-neutral-600">
+                {newsUnavailable
+                  ? "Club news is temporarily unavailable. Please check back later."
+                  : "No news articles have been published yet."}
+              </div>
+            )}
           </div>
         </section>
 

@@ -36,3 +36,4 @@ export async function requireStaffRole(
 
 export const allStaffRoles: readonly StaffRole[] = staffRoles;
 export const mediaStaffRoles: readonly StaffRole[] = ["super_admin", "admin", "media_manager"];
+export const newsStaffRoles: readonly StaffRole[] = ["super_admin", "admin", "editor"];
