@@ -26,7 +26,7 @@ export default function HomePage() {
         <section className="section">
           <SectionHeading eyebrow="The latest from EFCC" title="Club headlines" hrefLabel="All news" />
           <div className="news-grid">
-            {news.map((item, index) => (
+            {news.map((item) => (
               <article className="news-card" key={item.title}>
                 <div className="news-image" role="img" aria-label="Placeholder for official EFCC club photography">{item.image}</div>
                 <div className="news-copy"><div className="news-category">{item.category}</div><h3>{item.title}</h3><p>{item.summary}</p></div>

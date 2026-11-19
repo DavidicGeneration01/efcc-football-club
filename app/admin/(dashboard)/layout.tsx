@@ -4,18 +4,41 @@ import { allStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
 
 export const dynamic = "force-dynamic";
 
+const adminSections = [
+  { href: "/admin", label: "Dashboard" },
+  { href: "/admin/club", label: "The Club" },
+  { href: "/admin/team", label: "First Team" },
+  { href: "/admin/matches", label: "Match Centre" },
+  { href: "/admin/news", label: "News & Editorial" },
+  { href: "/admin/media", label: "Media Library" },
+  { href: "/admin/honours", label: "Honours" },
+  { href: "/admin/store", label: "Store" },
+  { href: "/admin/staff", label: "Staff & Permissions" },
+  { href: "/admin/settings", label: "Settings" }
+];
+
 export default async function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   await requireStaffRole(allStaffRoles);
 
   return (
     <div className="min-h-screen bg-[#f5f5f3] text-[#111] md:grid md:grid-cols-[250px_1fr]">
-      <aside className="flex flex-col bg-[#111] px-5 py-6 text-white md:min-h-screen">
+      <aside className="flex flex-col bg-[#111] px-5 py-5 text-white md:min-h-screen md:py-6">
         <Link href="/admin" className="text-sm font-extrabold tracking-widest text-white">
           EFCC <span className="text-[#ffaaa1]">ADMIN</span>
         </Link>
-        <nav aria-label="Admin navigation" className="mt-9 flex gap-3 text-sm md:flex-col">
-          <Link href="/admin" className="px-3 py-2 hover:bg-white/10">Overview</Link>
-          <Link href="/admin/media" className="px-3 py-2 hover:bg-white/10">Media uploads</Link>
+        <nav
+          aria-label="Admin navigation"
+          className="mt-5 grid grid-cols-2 gap-1 text-xs sm:grid-cols-3 md:mt-9 md:flex md:flex-col md:text-sm"
+        >
+          {adminSections.map(section => (
+            <Link
+              key={section.href}
+              href={section.href}
+              className="min-w-0 px-3 py-2 leading-5 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffaaa1]"
+            >
+              {section.label}
+            </Link>
+          ))}
         </nav>
         <form action={signOutAction} className="mt-auto hidden pt-8 md:block">
           <button type="submit" className="px-3 py-2 text-sm text-neutral-300 hover:text-white">
