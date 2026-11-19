@@ -11,12 +11,6 @@ export type NewsCategory = {
   slug: string;
 };
 
-export type NewsImageOption = {
-  id: string;
-  title: string;
-  asset_url: string;
-};
-
 export type NewsArticle = {
   id: string;
   title: string;
@@ -57,20 +51,6 @@ export async function getNewsCategories() {
 
   if (error) throw new NewsQueryError(`Could not load news categories: ${error.message}`);
   return data;
-}
-
-export async function getPublishedNewsImages(): Promise<NewsImageOption[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("media_items")
-    .select("id,title,asset_url")
-    .eq("media_type", "image")
-    .eq("published", true)
-    .not("asset_url", "is", null)
-    .order("created_at", { ascending: false });
-
-  if (error) throw new NewsQueryError(`Could not load published Media Library images: ${error.message}`);
-  return data.flatMap(image => image.asset_url ? [{ ...image, asset_url: image.asset_url }] : []);
 }
 
 export async function getAdminNewsArticle(id: string) {

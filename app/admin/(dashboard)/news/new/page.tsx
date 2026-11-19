@@ -1,10 +1,10 @@
 import { NewsArticleForm } from "@/components/admin/news-article-form";
 import { newsStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
-import { getNewsCategories, getPublishedNewsImages } from "@/lib/news/queries";
+import { getNewsCategories } from "@/lib/news/queries";
 
 export default async function NewNewsArticlePage() {
   await requireStaffRole(newsStaffRoles, "/admin");
-  const [categories, images] = await Promise.all([getNewsCategories(), getPublishedNewsImages()]);
+  const categories = await getNewsCategories();
 
   return (
     <div>
@@ -27,9 +27,6 @@ export default async function NewNewsArticlePage() {
             status: "draft"
           }}
           categories={categories}
-          images={images}
-          initialImageId=""
-          keepUnavailableImage={false}
         />
       </div>
     </div>

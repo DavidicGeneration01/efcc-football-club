@@ -8,7 +8,6 @@ export type NewsArticleInput = {
   excerpt: string | null;
   body: string;
   categoryId: string | null;
-  featuredImageId: string | null | "keep";
   seoTitle: string | null;
   seoDescription: string | null;
   intent: "draft" | "published";
@@ -46,10 +45,8 @@ export function parseNewsArticleInput(formData: FormData): ValidationResult<News
   const excerpt = readText(formData, "excerpt");
   const body = readText(formData, "body");
   const categoryId = readText(formData, "categoryId");
-  const featuredImageId = readText(formData, "featuredImageId");
   const seoTitle = readText(formData, "seoTitle");
   const seoDescription = readText(formData, "seoDescription");
-  const intent = readText(formData, "intent");
 
   if (idValue && !isUuid(idValue)) return { success: false, message: "The article identifier is invalid." };
   if (!title || title.length > 160) return { success: false, message: "Enter a title of 1 to 160 characters." };
@@ -59,20 +56,10 @@ export function parseNewsArticleInput(formData: FormData): ValidationResult<News
   if (excerpt.length > 500) return { success: false, message: "The excerpt must be 500 characters or fewer." };
   if (!body || body.length > 50000) return { success: false, message: "Enter article text of 1 to 50,000 characters." };
   if (categoryId && !isUuid(categoryId)) return { success: false, message: "Choose a valid news category." };
-  if (featuredImageId && featuredImageId !== "keep" && !isUuid(featuredImageId)) {
-    return { success: false, message: "Choose a valid published image." };
-  }
   if (seoTitle.length > 160) return { success: false, message: "The SEO title must be 160 characters or fewer." };
   if (seoDescription.length > 320) {
     return { success: false, message: "The SEO description must be 320 characters or fewer." };
   }
-  if (intent !== "draft" && intent !== "published") {
-    return { success: false, message: "Choose whether to save a draft or publish the article." };
-  }
-  if (featuredImageId === "keep" && !idValue) {
-    return { success: false, message: "A new article cannot keep an existing image." };
-  }
-
   return {
     success: true,
     data: {
@@ -82,10 +69,9 @@ export function parseNewsArticleInput(formData: FormData): ValidationResult<News
       excerpt: excerpt || null,
       body,
       categoryId: categoryId || null,
-      featuredImageId: featuredImageId || null,
       seoTitle: seoTitle || null,
       seoDescription: seoDescription || null,
-      intent
+      intent: "draft"
     }
   };
 }

@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { NewsArticleForm } from "@/components/admin/news-article-form";
 import { newsStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
-import { getAdminNewsArticle, getNewsCategories, getPublishedNewsImages } from "@/lib/news/queries";
+import { getAdminNewsArticle, getNewsCategories } from "@/lib/news/queries";
 import { isUuid } from "@/lib/news/validation";
 
 const notices: Record<string, string> = {
-  created: "Article created.",
-  saved: "Article saved."
+  "draft-saved": "Draft saved successfully",
+  published: "Article published successfully",
+  unpublished: "Article unpublished successfully",
+  "unpublish-error": "Article could not be unpublished. Check your access and try again."
 };
 
 export default async function EditNewsArticlePage({
@@ -14,23 +16,17 @@ export default async function EditNewsArticlePage({
   searchParams
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ notice?: string }>;
+  searchParams: Promise<{ notice?: string; detail?: string }>;
 }) {
   await requireStaffRole(newsStaffRoles, "/admin");
-  const [{ id }, { notice: noticeCode }] = await Promise.all([params, searchParams]);
+  const [{ id }, { notice: noticeCode, detail }] = await Promise.all([params, searchParams]);
   if (!isUuid(id)) notFound();
 
-  const [article, categories, images] = await Promise.all([
+  const [article, categories] = await Promise.all([
     getAdminNewsArticle(id),
-    getNewsCategories(),
-    getPublishedNewsImages()
+    getNewsCategories()
   ]);
   if (!article) notFound();
-
-  const currentImage = article.featured_image
-    ? images.find(image => image.asset_url === article.featured_image)
-    : undefined;
-  const keepUnavailableImage = Boolean(article.featured_image && !currentImage);
 
   return (
     <div>
@@ -54,10 +50,11 @@ export default async function EditNewsArticlePage({
             status: article.status
           }}
           categories={categories}
-          images={images}
-          initialImageId={currentImage?.id ?? (keepUnavailableImage ? "keep" : "")}
-          keepUnavailableImage={keepUnavailableImage}
-          notice={noticeCode ? notices[noticeCode] : undefined}
+          notice={noticeCode
+            ? noticeCode === "unpublish-error" && detail
+              ? `Article could not be unpublished: ${detail}`
+              : notices[noticeCode]
+            : undefined}
         />
       </div>
     </div>

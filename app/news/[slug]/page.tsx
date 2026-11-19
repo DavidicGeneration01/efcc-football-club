@@ -5,6 +5,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
 import { getPublishedArticle, NewsQueryError } from "@/lib/news/queries";
+import { parseNewsContent } from "@/lib/news/content";
 
 type ArticleRouteProps = { params: Promise<{ slug: string }> };
 
@@ -71,6 +72,8 @@ export default async function PublicNewsArticlePage({ params }: ArticleRouteProp
   const publishedAt = article.published_at
     ? new Intl.DateTimeFormat("en-NG", { dateStyle: "long" }).format(new Date(article.published_at))
     : null;
+  const contentBlocks = parseNewsContent(article.body);
+  const isBlockContent = article.body.startsWith("__EFCC_NEWS_CONTENT__");
 
   return (
     <>
@@ -104,9 +107,33 @@ export default async function PublicNewsArticlePage({ params }: ArticleRouteProp
                 />
               </div>
             ) : null}
-            <div className="whitespace-pre-line break-words text-base leading-8 text-neutral-800 sm:text-lg">
-              {article.body}
-            </div>
+            {isBlockContent ? (
+              <div className="space-y-8">
+                {contentBlocks.map((block, index) => block.type === "text" ? (
+                  <div key={index} className="whitespace-pre-line break-words text-base leading-8 text-neutral-800 sm:text-lg">
+                    {block.text}
+                  </div>
+                ) : (
+                  <figure key={block.mediaId} className="overflow-hidden">
+                    <div className="relative aspect-[16/9] overflow-hidden bg-neutral-100">
+                      <Image
+                        src={`/api/news-media/${block.mediaId}`}
+                        alt={block.alt || article.title}
+                        fill
+                        unoptimized
+                        sizes="(max-width: 896px) 100vw, 896px"
+                        className="object-contain"
+                      />
+                    </div>
+                    {block.caption ? <figcaption className="mt-3 text-sm leading-6 text-neutral-600">{block.caption}</figcaption> : null}
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <div className="whitespace-pre-line break-words text-base leading-8 text-neutral-800 sm:text-lg">
+                {article.body}
+              </div>
+            )}
           </div>
         </article>
       </main>

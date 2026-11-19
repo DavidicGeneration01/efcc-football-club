@@ -2,8 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { newsStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
 import { NewsCategoryManager } from "@/components/admin/news-category-manager";
+import { NewsStatusAction } from "@/components/admin/news-status-actions";
 import { getNewsCategories, NEWS_PAGE_SIZE } from "@/lib/news/queries";
-import { unpublishNewsArticleAction } from "./actions";
 
 const dateFormatter = new Intl.DateTimeFormat("en-NG", {
   dateStyle: "medium",
@@ -12,8 +12,9 @@ const dateFormatter = new Intl.DateTimeFormat("en-NG", {
 
 const notices: Record<string, { tone: "success" | "error"; message: string }> = {
   created: { tone: "success", message: "Article created." },
-  unpublished: { tone: "success", message: "Article unpublished and returned to drafts." },
   saved: { tone: "success", message: "Article saved." },
+  published: { tone: "success", message: "Article published successfully." },
+  unpublished: { tone: "success", message: "Article unpublished successfully." },
   invalid: { tone: "error", message: "The requested article action was invalid." },
   "not-found": { tone: "error", message: "The requested article or category was not found." },
   "action-error": { tone: "error", message: "The article could not be updated. Check access and try again." },
@@ -32,7 +33,7 @@ function safePage(value?: string) {
 export default async function AdminNewsPage({
   searchParams
 }: {
-  searchParams: Promise<{ page?: string; status?: string; category?: string; notice?: string }>;
+  searchParams: Promise<{ page?: string; status?: string; category?: string; notice?: string; detail?: string }>;
 }) {
   await requireStaffRole(newsStaffRoles, "/admin");
   const params = await searchParams;
@@ -58,7 +59,11 @@ export default async function AdminNewsPage({
 
   const categoryById = new Map(categories.map(category => [category.id, category]));
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / NEWS_PAGE_SIZE));
-  const notice = params.notice ? notices[params.notice] : undefined;
+  const notice = params.notice
+    ? params.notice === "publish-error" && params.detail
+      ? { tone: "error" as const, message: `Article could not be published: ${params.detail}` }
+      : notices[params.notice]
+    : undefined;
 
   return (
     <div>
@@ -140,14 +145,11 @@ export default async function AdminNewsPage({
                     <Link href={`/news/${article.slug}`} className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-neutral-600 hover:bg-neutral-100">
                       View
                     </Link>
-                    <form action={unpublishNewsArticleAction}>
-                      <input type="hidden" name="id" value={article.id} />
-                      <button type="submit" className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-neutral-600 hover:bg-neutral-100">
-                        Unpublish
-                      </button>
-                    </form>
+                    <NewsStatusAction id={article.id} published />
                   </>
-                ) : null}
+                ) : (
+                  <NewsStatusAction id={article.id} published={false} />
+                )}
               </div>
             </article>
           ))}

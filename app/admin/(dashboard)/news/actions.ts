@@ -8,7 +8,7 @@ import { isUuid, parseNewsArticleInput, parseNewsCategoryInput } from "@/lib/new
 
 export type NewsSaveState = {
   message: string;
-  status: "idle" | "error";
+  status: "idle" | "success" | "error";
 };
 
 function refreshNewsPaths(slugs: Array<string | null | undefined>) {
@@ -18,12 +18,11 @@ function refreshNewsPaths(slugs: Array<string | null | undefined>) {
   revalidatePath("/admin/news");
 }
 
-export async function saveNewsArticleAction(
+export async function createNewsDraftAction(
   _previousState: NewsSaveState,
   formData: FormData
 ): Promise<NewsSaveState> {
   await requireStaffRole(newsStaffRoles, "/admin");
-
   const parsed = parseNewsArticleInput(formData);
   if (!parsed.success) return { status: "error", message: parsed.message };
   const input = parsed.data;
@@ -35,101 +34,202 @@ export async function saveNewsArticleAction(
     return { status: "error", message: "Your staff session could not be verified. Sign in again and retry." };
   }
 
-  let existing: {
-    slug: string;
-    featured_image: string | null;
-    status: "draft" | "published" | "archived";
-    published_at: string | null;
-  } | null = null;
-
-  if (input.id) {
-    const { data, error } = await supabase
-      .from("news")
-      .select("slug,featured_image,status,published_at")
-      .eq("id", input.id)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Could not load the news article before editing.", error);
-      return { status: "error", message: "The article could not be loaded for editing." };
-    }
-    if (!data) return { status: "error", message: "The article was not found or you do not have permission to edit it." };
-    existing = data;
-  }
-
-  let featuredImage: string | null = null;
-  if (input.featuredImageId === "keep") {
-    if (!existing) return { status: "error", message: "There is no existing image to keep." };
-    featuredImage = existing.featured_image;
-  } else if (input.featuredImageId) {
-    const { data: media, error: mediaError } = await supabase
-      .from("media_items")
-      .select("asset_url")
-      .eq("id", input.featuredImageId)
-      .eq("media_type", "image")
-      .eq("published", true)
-      .maybeSingle();
-
-    if (mediaError) {
-      console.error("Could not verify the selected published news image.", mediaError);
-      return { status: "error", message: "The selected image could not be verified. Choose another image and retry." };
-    }
-    if (!media?.asset_url) {
-      return { status: "error", message: "The selected image is no longer published or available." };
-    }
-    featuredImage = media.asset_url;
+  const { data: existingWithSlug } = await supabase
+    .from("news")
+    .select("id")
+    .eq("slug", input.slug)
+    .maybeSingle();
+  if (existingWithSlug) {
+    return { status: "error", message: "This URL slug already exists. Open the existing article from the list instead of submitting again." };
   }
 
   const now = new Date().toISOString();
-  const publishedAt = input.intent === "draft"
-    ? null
-    : existing?.status === "published" && existing.published_at
-      ? existing.published_at
-      : now;
-  const values = {
-    title: input.title,
-    slug: input.slug,
-    excerpt: input.excerpt,
-    body: input.body,
-    category_id: input.categoryId,
-    featured_image: featuredImage,
-    seo_title: input.seoTitle,
-    seo_description: input.seoDescription,
-    status: input.intent,
-    published_at: publishedAt,
-    updated_at: now
-  };
-
-  const result = input.id
-    ? await supabase.from("news").update(values).eq("id", input.id).select("id,slug").maybeSingle()
-    : await supabase
-        .from("news")
-        .insert({ ...values, author_id: authData.user.id })
-        .select("id,slug")
-        .maybeSingle();
+  const result = await supabase
+    .from("news")
+    .insert({
+      title: input.title,
+      slug: input.slug,
+      excerpt: input.excerpt,
+      body: input.body,
+      category_id: input.categoryId,
+      seo_title: input.seoTitle,
+      seo_description: input.seoDescription,
+      status: "draft",
+      published_at: null,
+      updated_at: now,
+      author_id: authData.user.id
+    })
+    .select("id,slug")
+    .maybeSingle();
 
   if (result.error) {
-    if (result.error.code === "23505") {
-      return { status: "error", message: "That URL slug is already in use. Choose a different slug." };
-    }
-    console.error("Could not save the news article.", result.error);
-    return { status: "error", message: "The article could not be saved. Check your access and try again." };
+    if (result.error.code === "23505") return { status: "error", message: "That URL slug is already in use. Choose a different slug." };
+    console.error("Could not create the news draft.", result.error);
+    return { status: "error", message: `Draft could not be created: ${result.error.message}` };
   }
-  if (!result.data) {
-    return { status: "error", message: "The article was not saved. Check your access and try again." };
+  if (!result.data) return { status: "error", message: "The draft was not created. Check your access and try again." };
+
+  refreshNewsPaths([result.data.slug]);
+  redirect(`/admin/news/${result.data.id}/edit?notice=draft-saved`);
+}
+
+export async function createAndPublishNewsAction(
+  _previousState: NewsSaveState,
+  formData: FormData
+): Promise<NewsSaveState> {
+  await requireStaffRole(newsStaffRoles, "/admin");
+  const parsed = parseNewsArticleInput(formData);
+  if (!parsed.success) return { status: "error", message: parsed.message };
+  const input = parsed.data;
+
+  const supabase = await createClient();
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    if (authError) console.error("Could not verify the news author.", authError);
+    return { status: "error", message: "Your staff session could not be verified. Sign in again and retry." };
   }
 
-  refreshNewsPaths([existing?.slug, result.data.slug]);
-  redirect(
-    input.id
-      ? `/admin/news/${input.id}/edit?notice=saved`
-      : `/admin/news/${result.data.id}/edit?notice=created`
-  );
+  const { data: existingWithSlug } = await supabase
+    .from("news")
+    .select("id")
+    .eq("slug", input.slug)
+    .maybeSingle();
+  if (existingWithSlug) {
+    return { status: "error", message: "This URL slug already exists. Open the existing article from the list instead of submitting again." };
+  }
+
+  const now = new Date().toISOString();
+  const result = await supabase
+    .from("news")
+    .insert({
+      title: input.title,
+      slug: input.slug,
+      excerpt: input.excerpt,
+      body: input.body,
+      category_id: input.categoryId,
+      seo_title: input.seoTitle,
+      seo_description: input.seoDescription,
+      status: "published",
+      published_at: now,
+      updated_at: now,
+      author_id: authData.user.id
+    })
+    .select("id,slug")
+    .maybeSingle();
+
+  if (result.error) {
+    if (result.error.code === "23505") return { status: "error", message: "That URL slug is already in use. Choose a different slug." };
+    console.error("Could not create and publish the news article.", result.error);
+    return { status: "error", message: `Article could not be published: ${result.error.message}` };
+  }
+  if (!result.data) return { status: "error", message: "The article was not published. Check your access and try again." };
+
+  refreshNewsPaths([result.data.slug]);
+  redirect(`/admin/news/${result.data.id}/edit?notice=published`);
+}
+
+export async function saveNewsDraftAction(
+  _previousState: NewsSaveState,
+  formData: FormData
+): Promise<NewsSaveState> {
+  await requireStaffRole(newsStaffRoles, "/admin");
+  const parsed = parseNewsArticleInput(formData);
+  if (!parsed.success) return { status: "error", message: parsed.message };
+  const input = parsed.data;
+  if (!input.id) return { status: "error", message: "Save Draft can only update an existing article." };
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("news")
+    .select("slug,featured_image")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (existingError) return { status: "error", message: `Article could not be loaded: ${existingError.message}` };
+  if (!existing) return { status: "error", message: "The article was not found or you do not have permission to edit it." };
+
+  const now = new Date().toISOString();
+  const result = await supabase
+    .from("news")
+    .update({
+      title: input.title,
+      slug: input.slug,
+      excerpt: input.excerpt,
+      body: input.body,
+      category_id: input.categoryId,
+      featured_image: existing.featured_image,
+      seo_title: input.seoTitle,
+      seo_description: input.seoDescription,
+      status: "draft",
+      published_at: null,
+      updated_at: now
+    })
+    .eq("id", input.id)
+    .select("id,slug")
+    .maybeSingle();
+
+  if (result.error) {
+    if (result.error.code === "23505") return { status: "error", message: "That URL slug is already in use. Choose a different slug." };
+    console.error("Could not save the news draft.", result.error);
+    return { status: "error", message: `Draft could not be saved: ${result.error.message}` };
+  }
+  if (!result.data) return { status: "error", message: "The draft was not saved. Check your access and try again." };
+
+  refreshNewsPaths([existing.slug, result.data.slug]);
+  redirect(`/admin/news/${input.id}/edit?notice=draft-saved`);
+}
+
+export async function publishNewsArticleAction(
+  _previousState: NewsSaveState,
+  formData: FormData
+): Promise<NewsSaveState> {
+  await requireStaffRole(newsStaffRoles, "/admin");
+  const parsed = parseNewsArticleInput(formData);
+  if (!parsed.success) return { status: "error", message: parsed.message };
+  const input = parsed.data;
+  if (!input.id) return { status: "error", message: "Publish Article can only publish an existing article." };
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("news")
+    .select("slug,featured_image,status,published_at")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (existingError) return { status: "error", message: `Article could not be loaded: ${existingError.message}` };
+  if (!existing) return { status: "error", message: "The article was not found or you do not have permission to publish it." };
+
+  const now = new Date().toISOString();
+  const result = await supabase
+    .from("news")
+    .update({
+      title: input.title,
+      slug: input.slug,
+      excerpt: input.excerpt,
+      body: input.body,
+      category_id: input.categoryId,
+      featured_image: existing.featured_image,
+      seo_title: input.seoTitle,
+      seo_description: input.seoDescription,
+      status: "published",
+      published_at: existing.status === "published" && existing.published_at ? existing.published_at : now,
+      updated_at: now
+    })
+    .eq("id", input.id)
+    .select("id,slug")
+    .maybeSingle();
+
+  if (result.error) {
+    if (result.error.code === "23505") return { status: "error", message: "That URL slug is already in use. Choose a different slug." };
+    console.error("Could not publish the news article.", result.error);
+    return { status: "error", message: `Article could not be published: ${result.error.message}` };
+  }
+  if (!result.data) return { status: "error", message: "The article was not published. Check your access and try again." };
+
+  refreshNewsPaths([existing.slug, result.data.slug]);
+  redirect(`/admin/news/${input.id}/edit?notice=published`);
 }
 
 export async function unpublishNewsArticleAction(formData: FormData) {
   await requireStaffRole(newsStaffRoles, "/admin");
-
   const id = formData.get("id");
   if (typeof id !== "string" || !isUuid(id)) redirect("/admin/news?notice=invalid");
 
@@ -139,11 +239,7 @@ export async function unpublishNewsArticleAction(formData: FormData) {
     .select("slug")
     .eq("id", id)
     .maybeSingle();
-
-  if (readError) {
-    console.error("Could not load the article before unpublishing.", readError);
-    redirect("/admin/news?notice=action-error");
-  }
+  if (readError) redirect(`/admin/news/${id}/edit?notice=unpublish-error&detail=${encodeURIComponent(readError.message)}`);
   if (!article) redirect("/admin/news?notice=not-found");
 
   const { data, error } = await supabase
@@ -152,15 +248,43 @@ export async function unpublishNewsArticleAction(formData: FormData) {
     .eq("id", id)
     .select("id")
     .maybeSingle();
+  if (error) redirect(`/admin/news/${id}/edit?notice=unpublish-error&detail=${encodeURIComponent(error.message)}`);
+  if (!data) redirect(`/admin/news/${id}/edit?notice=unpublish-error&detail=No+article+was+updated.`);
 
-  if (error) {
-    console.error("Could not unpublish the news article.", error);
-    redirect("/admin/news?notice=action-error");
-  }
+  refreshNewsPaths([article.slug]);
+  redirect(`/admin/news/${id}/edit?notice=unpublished`);
+}
+
+export async function publishNewsArticleByIdAction(formData: FormData) {
+  await requireStaffRole(newsStaffRoles, "/admin");
+  const id = formData.get("id");
+  if (typeof id !== "string" || !isUuid(id)) redirect("/admin/news?notice=invalid");
+
+  const supabase = await createClient();
+  const { data: article, error: readError } = await supabase
+    .from("news")
+    .select("slug,status,published_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError) redirect(`/admin/news?notice=publish-error&detail=${encodeURIComponent(readError.message)}`);
+  if (!article) redirect("/admin/news?notice=not-found");
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("news")
+    .update({
+      status: "published",
+      published_at: article.status === "published" && article.published_at ? article.published_at : now,
+      updated_at: now
+    })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) redirect(`/admin/news?notice=publish-error&detail=${encodeURIComponent(error.message)}`);
   if (!data) redirect("/admin/news?notice=not-found");
 
   refreshNewsPaths([article.slug]);
-  redirect("/admin/news?notice=unpublished");
+  redirect("/admin/news?notice=published");
 }
 
 export async function saveNewsCategoryAction(formData: FormData) {
