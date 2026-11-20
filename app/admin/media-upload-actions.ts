@@ -39,6 +39,77 @@ function hasExpectedSignature(type: string, bytes: Uint8Array) {
   return false;
 }
 
+type ModuleMediaScope = "library" | "player_photo";
+
+async function cleanupModuleUpload({
+  supabase,
+  mediaId,
+  storagePath,
+  userId,
+  scope
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  mediaId: string;
+  storagePath: string;
+  userId: string;
+  scope: ModuleMediaScope;
+}) {
+  try {
+    const { data: media, error: lookupError } = await supabase
+      .from("media_items")
+      .select("id,storage_path,uploaded_by,published,usage_scope")
+      .eq("id", mediaId)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error("Could not verify uploaded media before cleanup.", lookupError);
+      return { success: false, message: `Media cleanup could not be verified: ${lookupError.message}` };
+    }
+
+    if (media) {
+      if (
+        media.storage_path !== storagePath ||
+        media.uploaded_by !== userId ||
+        media.usage_scope !== scope ||
+        media.published
+      ) {
+        return { success: false, message: "The upload is no longer an owned, unpublished module asset; it was retained." };
+      }
+
+      const { data: deletedMedia, error: deleteError } = await supabase
+        .from("media_items")
+        .delete()
+        .eq("id", mediaId)
+        .eq("storage_path", storagePath)
+        .eq("uploaded_by", userId)
+        .eq("usage_scope", scope)
+        .eq("published", false)
+        .select("id")
+        .maybeSingle();
+
+      if (deleteError) {
+        console.error("Could not delete the unassociated module media record.", deleteError);
+        return { success: false, message: `The media record could not be removed: ${deleteError.message}` };
+      }
+      if (!deletedMedia) {
+        return { success: false, message: "The media record is still associated with content and was retained." };
+      }
+    }
+
+    const { error: storageError } = await supabase.storage.from("efcc-media").remove([storagePath]);
+    if (storageError) {
+      console.error("Could not remove an unregistered module upload.", { storagePath, storageError });
+      return { success: false, message: `The Storage object could not be removed: ${storageError.message}` };
+    }
+
+    return { success: true, message: "" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown cleanup error.";
+    console.error("Module media cleanup did not complete.", { mediaId, storagePath, error });
+    return { success: false, message };
+  }
+}
+
 export async function uploadModuleMediaAction(
   _previousState: SharedMediaUploadState,
   formData: FormData
@@ -51,6 +122,11 @@ export async function uploadModuleMediaAction(
   const articleId = typeof articleIdValue === "string" && articleIdValue ? articleIdValue : null;
   if (articleId && !isUuid(articleId)) {
     return { status: "error", message: "The article identifier is invalid." };
+  }
+  const playerIdValue = formData.get("playerId");
+  const playerId = typeof playerIdValue === "string" && playerIdValue ? playerIdValue : null;
+  if ((moduleName === "team" && (!playerId || !isUuid(playerId))) || (moduleName !== "team" && playerId)) {
+    return { status: "error", message: "A valid player must be selected for this photograph." };
   }
 
   await requireStaffRole(moduleRoles[moduleName], "/admin");
@@ -75,6 +151,20 @@ export async function uploadModuleMediaAction(
     return { status: "error", message: "Your staff session could not be verified. Sign in again and retry." };
   }
 
+  if (moduleName === "team" && playerId) {
+    const { data: player, error: playerError } = await supabase
+      .from("players")
+      .select("id")
+      .eq("id", playerId)
+      .is("archived_at", null)
+      .maybeSingle();
+    if (playerError) {
+      console.error("Could not verify the player before uploading a photograph.", playerError);
+      return { status: "error", message: `The player could not be verified: ${playerError.message}` };
+    }
+    if (!player) return { status: "error", message: "The player was not found or is archived." };
+  }
+
   const mediaId = randomUUID();
   const storagePath = `${moduleName}/${authData.user.id}/${randomUUID()}.${extension}`;
   const { data: uploaded, error: uploadError } = await supabase.storage
@@ -88,20 +178,107 @@ export async function uploadModuleMediaAction(
       id: mediaId,
       title: file.name,
       media_type: "image",
-      category: moduleName === "news" ? "General Club Photography" : null,
+      category: moduleName === "news" ? "General Club Photography" : moduleName === "team" ? "First Team" : null,
       asset_url: `/api/media/${mediaId}`,
       storage_path: uploaded.path,
       uploaded_by: authData.user.id,
-      published: false
+      published: false,
+      usage_scope: moduleName === "team" ? "player_photo" : "library"
     });
 
   if (insertError) {
-    await supabase.storage.from("efcc-media").remove([uploaded.path]);
     console.error("Could not save module media metadata.", insertError);
-    return { status: "error", message: `Image metadata could not be saved: ${insertError.message}` };
+    const cleanup = await cleanupModuleUpload({
+      supabase,
+      mediaId,
+      storagePath: uploaded.path,
+      userId: authData.user.id,
+      scope: moduleName === "team" ? "player_photo" : "library"
+    });
+    return {
+      status: "error",
+      message: `Image metadata could not be saved: ${insertError.message}${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
+    };
   }
 
-  let originalBody: string | null = null;
+  const { data: signed, error: signedError } = await supabase.storage
+    .from("efcc-media")
+    .createSignedUrl(uploaded.path, 300);
+  if (signedError || !signed?.signedUrl) {
+    const cleanup = await cleanupModuleUpload({
+      supabase,
+      mediaId,
+      storagePath: uploaded.path,
+      userId: authData.user.id,
+      scope: moduleName === "team" ? "player_photo" : "library"
+    });
+    console.error("Could not create an admin preview for uploaded media.", signedError);
+    return {
+      status: "error",
+      message: `${signedError ? `The image uploaded but its preview could not be created: ${signedError.message}` : "The image uploaded but its preview could not be created."}${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
+    };
+  }
+
+  if (moduleName === "team" && playerId) {
+    const playerPhotoUrl = `/api/team-media/${mediaId}`;
+    const { data: associatedPlayer, error: associationError } = await supabase
+      .from("players")
+      .update({
+        photo_media_id: mediaId,
+        photo_url: playerPhotoUrl,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", playerId)
+      .is("archived_at", null)
+      .select("id")
+      .maybeSingle();
+
+    if (associationError || !associatedPlayer) {
+      const { data: verifiedPlayer, error: verifyError } = await supabase
+        .from("players")
+        .select("photo_media_id")
+        .eq("id", playerId)
+        .maybeSingle();
+      if (!verifyError && verifiedPlayer?.photo_media_id === mediaId) {
+        return {
+          status: "success",
+          message: "Player photograph was associated despite an interrupted response.",
+          mediaId,
+          assetUrl: playerPhotoUrl,
+          previewUrl: signed.signedUrl
+        };
+      }
+
+      const cleanup = await cleanupModuleUpload({
+        supabase,
+        mediaId,
+        storagePath: uploaded.path,
+        userId: authData.user.id,
+        scope: "player_photo"
+      });
+      if (verifyError) {
+        console.error("Could not verify the player photograph association.", verifyError);
+        return {
+          status: "error",
+          message: `The photograph association could not be verified. The uploaded media was retained.${cleanup.success ? "" : ` Cleanup: ${cleanup.message}`}`
+        };
+      }
+      console.error("Could not associate the uploaded photograph with its player.", associationError);
+      return {
+        status: "error",
+        message: `The photograph could not be associated with the player.${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
+      };
+    }
+
+    return {
+      status: "success",
+      message: "Player photograph uploaded and associated.",
+      mediaId,
+      assetUrl: playerPhotoUrl,
+      previewUrl: signed.signedUrl
+    };
+  }
+
   if (moduleName === "news" && articleId) {
     const { data: article, error: articleError } = await supabase
       .from("news")
@@ -109,21 +286,42 @@ export async function uploadModuleMediaAction(
       .eq("id", articleId)
       .maybeSingle();
     if (articleError || !article) {
-      await supabase
-        .from("media_items")
-        .delete()
-        .eq("id", mediaId)
-        .eq("uploaded_by", authData.user.id);
-      await supabase.storage.from("efcc-media").remove([uploaded.path]);
+      const cleanup = await cleanupModuleUpload({
+        supabase,
+        mediaId,
+        storagePath: uploaded.path,
+        userId: authData.user.id,
+        scope: "library"
+      });
       return {
         status: "error",
         message: articleError
-          ? `The image uploaded but the article could not be associated: ${articleError.message}`
-          : "The image uploaded but the article could not be found for association."
+          ? `The image uploaded but the article could not be associated: ${articleError.message}${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
+          : `The image uploaded but the article could not be found for association.${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
       };
     }
 
-    originalBody = article.body;
+    const { error: attachmentError } = await supabase
+      .from("news_media_attachments")
+      .upsert(
+        { news_id: articleId, media_id: mediaId },
+        { onConflict: "news_id,media_id", ignoreDuplicates: true }
+      );
+    if (attachmentError) {
+      console.error("Could not authorize the uploaded News image.", attachmentError);
+      const cleanup = await cleanupModuleUpload({
+        supabase,
+        mediaId,
+        storagePath: uploaded.path,
+        userId: authData.user.id,
+        scope: "library"
+      });
+      return {
+        status: "error",
+        message: `The image could not be authorized for News: ${attachmentError.message}${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
+      };
+    }
+
     const blocks = parseNewsContent(article.body);
     const updatedBody = serializeNewsContent([
       ...blocks,
@@ -135,48 +333,54 @@ export async function uploadModuleMediaAction(
         alt: file.name
       }
     ]);
-    const { error: associationError } = await supabase
+    const { data: associatedArticle, error: associationError } = await supabase
       .from("news")
       .update({ body: updatedBody, updated_at: new Date().toISOString() })
-      .eq("id", articleId);
-    if (associationError) {
-      await supabase
-        .from("media_items")
-        .delete()
-        .eq("id", mediaId)
-        .eq("uploaded_by", authData.user.id);
-      await supabase.storage.from("efcc-media").remove([uploaded.path]);
-      console.error("Could not associate uploaded image with the news article.", associationError);
+      .eq("id", articleId)
+      .eq("body", article.body)
+      .select("id")
+      .maybeSingle();
+    if (associationError || !associatedArticle) {
+      console.error(
+        "Could not associate uploaded image with the news article.",
+        associationError ?? "The article changed before the image was associated."
+      );
+      const { data: verifiedArticle, error: verifyError } = await supabase
+        .from("news")
+        .select("body")
+        .eq("id", articleId)
+        .maybeSingle();
+      if (!verifyError && verifiedArticle && parseNewsContent(verifiedArticle.body).some(
+        block => block.type === "image" && block.mediaId === mediaId
+      )) {
+        return {
+          status: "success",
+          message: "The image was associated despite an interrupted response.",
+          mediaId,
+          assetUrl: `/api/admin/news-media/${mediaId}`,
+          previewUrl: signed.signedUrl
+        };
+      }
+      if (verifyError) {
+        console.error("Could not verify the image association with the news article.", verifyError);
+        return {
+          status: "error",
+          message: `The image association could not be verified. The upload was retained; check the article before retrying.`
+        };
+      }
+      const cleanup = await cleanupModuleUpload({
+        supabase,
+        mediaId,
+        storagePath: uploaded.path,
+        userId: authData.user.id,
+        scope: "library"
+      });
+      const failureMessage = associationError?.message ?? "The article changed before the image could be associated.";
       return {
         status: "error",
-        message: `The image uploaded but could not be associated with the article: ${associationError.message}`
+        message: `The image could not be associated with the article: ${failureMessage}${cleanup.success ? "" : ` Cleanup also failed: ${cleanup.message}`}`
       };
     }
-  }
-
-  const { data: signed, error: signedError } = await supabase.storage
-    .from("efcc-media")
-    .createSignedUrl(uploaded.path, 300);
-  if (signedError || !signed?.signedUrl) {
-    if (moduleName === "news" && articleId && originalBody !== null) {
-      await supabase
-        .from("news")
-        .update({ body: originalBody, updated_at: new Date().toISOString() })
-        .eq("id", articleId);
-    }
-    await supabase
-      .from("media_items")
-      .delete()
-      .eq("id", mediaId)
-      .eq("uploaded_by", authData.user.id);
-    await supabase.storage.from("efcc-media").remove([uploaded.path]);
-    console.error("Could not create an admin preview for uploaded media.", signedError);
-    return {
-      status: "error",
-      message: signedError
-        ? `The image uploaded but its preview could not be created: ${signedError.message}`
-        : "The image uploaded but its preview could not be created."
-    };
   }
 
   return {

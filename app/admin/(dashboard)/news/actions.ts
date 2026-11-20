@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { newsStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
 import { createClient } from "@/lib/supabase/server";
-import { getNewsFeaturedImage } from "@/lib/news/content";
+import { getNewsFeaturedImage, parseNewsContent } from "@/lib/news/content";
 import { isUuid, parseNewsArticleInput, parseNewsCategoryInput } from "@/lib/news/validation";
 
 export type NewsSaveState = {
@@ -22,6 +22,73 @@ function refreshNewsPaths(slugs: Array<string | null | undefined>) {
   revalidatePath("/news");
   slugs.filter((slug): slug is string => Boolean(slug)).forEach(slug => revalidatePath(`/news/${slug}`));
   revalidatePath("/admin/news");
+}
+
+async function syncNewsMediaAttachments({
+  supabase,
+  newsId,
+  body,
+  userId
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  newsId: string;
+  body: string;
+  userId: string;
+}) {
+  const mediaIds = [...new Set(
+    parseNewsContent(body)
+      .filter(block => block.type === "image")
+      .map(block => block.mediaId)
+  )];
+  if (mediaIds.some(mediaId => !isUuid(mediaId))) {
+    return "One or more News image identifiers are invalid.";
+  }
+  if (mediaIds.length === 0) return null;
+
+  const { data: mediaItems, error: mediaError } = await supabase
+    .from("media_items")
+    .select("id,published,uploaded_by,media_type,usage_scope,storage_path")
+    .in("id", mediaIds);
+  if (mediaError) {
+    console.error("Could not verify News images before saving.", mediaError);
+    return `News images could not be verified: ${mediaError.message}`;
+  }
+
+  const mediaById = new Map((mediaItems ?? []).map(media => [media.id, media]));
+  const attachments: Array<{ news_id: string; media_id: string }> = [];
+  for (const mediaId of mediaIds) {
+    const media = mediaById.get(mediaId);
+    if (
+      !media ||
+      media.media_type !== "image" ||
+      media.usage_scope !== "library" ||
+      typeof media.storage_path !== "string"
+    ) {
+      return "One or more News images are unavailable or are not library images.";
+    }
+    if (media.published) continue;
+    if (media.uploaded_by !== userId || media.storage_path.split("/")[0] !== "news") {
+      return "Unpublished News images can only be attached by their uploader.";
+    }
+    attachments.push({ news_id: newsId, media_id: mediaId });
+  }
+
+  if (attachments.length === 0) return null;
+
+  const { error: attachmentError } = await supabase
+    .from("news_media_attachments")
+    .upsert(attachments, { onConflict: "news_id,media_id", ignoreDuplicates: true });
+  if (attachmentError) {
+    console.error("Could not authorize News image attachments.", attachmentError);
+    return `News image attachments could not be saved: ${attachmentError.message}`;
+  }
+  return null;
+}
+
+async function deleteCreatedDraft(supabase: Awaited<ReturnType<typeof createClient>>, newsId: string) {
+  const { error } = await supabase.from("news").delete().eq("id", newsId);
+  if (error) console.error("Could not remove a draft after News image authorization failed.", error);
+  return error;
 }
 
 export async function createNewsDraftAction(
@@ -76,6 +143,20 @@ export async function createNewsDraftAction(
   }
   if (!result.data) return { status: "error", message: "The draft was not created. Check your access and try again." };
 
+  const attachmentError = await syncNewsMediaAttachments({
+    supabase,
+    newsId: result.data.id,
+    body: input.body,
+    userId: authData.user.id
+  });
+  if (attachmentError) {
+    const cleanupError = await deleteCreatedDraft(supabase, result.data.id);
+    return {
+      status: "error",
+      message: `Draft images could not be authorized: ${attachmentError}${cleanupError ? ` The new draft ${result.data.id} could not be removed.` : ""}`
+    };
+  }
+
   refreshNewsPaths([result.data.slug]);
   redirect(`/admin/news/${result.data.id}/edit?notice=draft-saved`);
 }
@@ -117,8 +198,8 @@ export async function createAndPublishNewsAction(
       category_id: input.categoryId,
       seo_title: input.seoTitle,
       seo_description: input.seoDescription,
-      status: "published",
-      published_at: now,
+      status: "draft",
+      published_at: null,
       updated_at: now,
       author_id: authData.user.id
     })
@@ -132,8 +213,36 @@ export async function createAndPublishNewsAction(
   }
   if (!result.data) return { status: "error", message: "The article was not published. Check your access and try again." };
 
-  refreshNewsPaths([result.data.slug]);
-  redirect(`/admin/news/${result.data.id}/edit?notice=published`);
+  const attachmentError = await syncNewsMediaAttachments({
+    supabase,
+    newsId: result.data.id,
+    body: input.body,
+    userId: authData.user.id
+  });
+  if (attachmentError) {
+    const cleanupError = await deleteCreatedDraft(supabase, result.data.id);
+    return {
+      status: "error",
+      message: `Article images could not be authorized: ${attachmentError}${cleanupError ? ` The unpublished draft ${result.data.id} could not be removed.` : ""}`
+    };
+  }
+
+  const publishResult = await supabase
+    .from("news")
+    .update({ status: "published", published_at: now, updated_at: now })
+    .eq("id", result.data.id)
+    .select("id,slug")
+    .maybeSingle();
+  if (publishResult.error) {
+    console.error("Could not publish the new article after verifying its images.", publishResult.error);
+    return { status: "error", message: `Article draft was saved, but publication failed: ${publishResult.error.message}` };
+  }
+  if (!publishResult.data) {
+    return { status: "error", message: "Article draft was saved but could not be published. Check your access and try again." };
+  }
+
+  refreshNewsPaths([publishResult.data.slug]);
+  redirect(`/admin/news/${publishResult.data.id}/edit?notice=published`);
 }
 
 export async function saveNewsDraftAction(
@@ -154,6 +263,19 @@ export async function saveNewsDraftAction(
     .maybeSingle();
   if (existingError) return { status: "error", message: `Article could not be loaded: ${existingError.message}` };
   if (!existing) return { status: "error", message: "The article was not found or you do not have permission to edit it." };
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    if (authError) console.error("Could not verify the News editor.", authError);
+    return { status: "error", message: "Your staff session could not be verified. Sign in again and retry." };
+  }
+  const attachmentError = await syncNewsMediaAttachments({
+    supabase,
+    newsId: input.id,
+    body: input.body,
+    userId: authData.user.id
+  });
+  if (attachmentError) return { status: "error", message: `Draft images could not be authorized: ${attachmentError}` };
 
   const now = new Date().toISOString();
   const result = await supabase
@@ -204,6 +326,19 @@ export async function publishNewsArticleAction(
     .maybeSingle();
   if (existingError) return { status: "error", message: `Article could not be loaded: ${existingError.message}` };
   if (!existing) return { status: "error", message: "The article was not found or you do not have permission to publish it." };
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    if (authError) console.error("Could not verify the News publisher.", authError);
+    return { status: "error", message: "Your staff session could not be verified. Sign in again and retry." };
+  }
+  const attachmentError = await syncNewsMediaAttachments({
+    supabase,
+    newsId: input.id,
+    body: input.body,
+    userId: authData.user.id
+  });
+  if (attachmentError) return { status: "error", message: `Article images could not be authorized: ${attachmentError}` };
 
   const now = new Date().toISOString();
   const result = await supabase
@@ -271,11 +406,26 @@ export async function publishNewsArticleByIdAction(formData: FormData) {
   const supabase = await createClient();
   const { data: article, error: readError } = await supabase
     .from("news")
-    .select("slug,status,published_at")
+    .select("slug,status,published_at,body")
     .eq("id", id)
     .maybeSingle();
   if (readError) redirect(`/admin/news?notice=publish-error&detail=${encodeURIComponent(readError.message)}`);
   if (!article) redirect("/admin/news?notice=not-found");
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    if (authError) console.error("Could not verify the News publisher.", authError);
+    redirect(`/admin/news?notice=publish-error&detail=${encodeURIComponent("Your staff session could not be verified.")}`);
+  }
+  const attachmentError = await syncNewsMediaAttachments({
+    supabase,
+    newsId: id,
+    body: article.body,
+    userId: authData.user.id
+  });
+  if (attachmentError) {
+    redirect(`/admin/news?notice=publish-error&detail=${encodeURIComponent(attachmentError)}`);
+  }
 
   const now = new Date().toISOString();
   const { data, error } = await supabase

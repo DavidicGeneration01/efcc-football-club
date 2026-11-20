@@ -39,6 +39,7 @@ export default async function AdminMediaPage({
     .from("media_items")
     .select("id,title,category,media_type,asset_url,storage_path,published,created_at,uploaded_by")
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .order("created_at", { ascending: false });
 
   let items: Array<{

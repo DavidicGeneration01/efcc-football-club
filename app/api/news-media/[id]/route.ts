@@ -11,26 +11,12 @@ export async function GET(
   if (!uuidPattern.test(id)) return new Response("Not found", { status: 404 });
 
   const supabase = await createClient();
-  const { data: article, error: articleError } = await supabase
-    .from("news")
-    .select("id")
-    .eq("status", "published")
-    .not("published_at", "is", null)
-    .lte("published_at", new Date().toISOString())
-    .like("body", `%${id}%`)
-    .maybeSingle();
-
-  if (articleError) {
-    console.error("Could not verify published article media.", articleError);
-    return new Response("Media is temporarily unavailable", { status: 503, headers: { "Cache-Control": "no-store" } });
-  }
-  if (!article) return new Response("Not found", { status: 404 });
-
   const { data: media, error: mediaError } = await supabase
     .from("media_items")
     .select("storage_path")
     .eq("id", id)
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .maybeSingle();
   if (mediaError) {
     console.error("Could not load article media metadata.", mediaError);

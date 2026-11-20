@@ -26,6 +26,8 @@ export type PlayerRecord = {
   updated_at: string;
 };
 
+export type PublicPlayerRecord = Omit<PlayerRecord, "archived_by">;
+
 const adminPlayerFields = "id,full_name,slug,shirt_number,position,nationality,biography,photo_url,photo_media_id,is_active,roster_status,publication_status,published_at,archived_at,archived_by,created_at,updated_at";
 const publicPlayerFields = "id,full_name,slug,shirt_number,position,nationality,biography,photo_url,photo_media_id,is_active,roster_status,publication_status,published_at,archived_at,created_at,updated_at";
 
@@ -101,7 +103,7 @@ export async function getPublishedPlayers(rosterStatus: "current" | "former") {
     .order("full_name", { ascending: true });
 
   if (error) throw new PlayerQueryError(`Could not load the ${rosterStatus} squad: ${error.message}`);
-  return data as PlayerRecord[];
+  return data as PublicPlayerRecord[];
 }
 
 export async function getPublishedPlayerBySlug(slug: string) {
@@ -116,7 +118,7 @@ export async function getPublishedPlayerBySlug(slug: string) {
     .maybeSingle();
 
   if (error) throw new PlayerQueryError(`Could not load the player profile: ${error.message}`);
-  return data as PlayerRecord | null;
+  return data as PublicPlayerRecord | null;
 }
 
 export const PLAYER_PAGE_SIZE = pageSize;

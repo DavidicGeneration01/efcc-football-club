@@ -22,6 +22,7 @@ export default async function AdminHomePage() {
       .from("media_items")
       .select("id", { count: "exact", head: true })
       .eq("media_type", "image")
+      .eq("usage_scope", "library")
       .eq("published", true),
     supabase
       .from("matches")

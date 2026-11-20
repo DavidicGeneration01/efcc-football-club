@@ -17,6 +17,7 @@ export async function GET(
     .select("storage_path")
     .eq("id", id)
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .eq("published", true)
     .maybeSingle();
 

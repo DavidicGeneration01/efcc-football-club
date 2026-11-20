@@ -12,10 +12,12 @@ const initialState: SharedMediaUploadState = { status: "idle", message: "" };
 export function SharedMediaUpload({
   moduleName,
   articleId,
+  playerId,
   onUploaded
 }: {
   moduleName: "news" | "team" | "matches" | "club" | "honours" | "store";
   articleId?: string;
+  playerId?: string;
   onUploaded?: (media: { mediaId: string; assetUrl: string; previewUrl: string; fileName: string }) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -78,6 +80,7 @@ export function SharedMediaUpload({
       <form ref={formRef} action={formAction} className="space-y-4">
         <input type="hidden" name="module" value={moduleName} />
         {articleId ? <input type="hidden" name="articleId" value={articleId} /> : null}
+        {playerId ? <input type="hidden" name="playerId" value={playerId} /> : null}
         <label htmlFor={`upload-${moduleName}`} className="block text-sm font-bold">Upload image</label>
         <input
           id={`upload-${moduleName}`}

@@ -18,6 +18,7 @@ export async function GET(
     .select("storage_path")
     .eq("id", id)
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .maybeSingle();
   if (error) {
     console.error("Could not load admin news media.", error);

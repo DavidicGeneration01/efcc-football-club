@@ -51,6 +51,10 @@ with check (
   and uploaded_by = auth.uid()
 );
 
+revoke all privileges on table public.media_items from public, anon, authenticated;
+grant select on table public.media_items to anon;
+grant select, insert, update, delete on table public.media_items to authenticated;
+
 drop policy if exists "Public can read EFCC media" on storage.objects;
 drop policy if exists "Public can read published EFCC media objects" on storage.objects;
 create policy "Public can read published EFCC media objects"
@@ -122,9 +126,10 @@ using (
 );
 
 -- Only expose variant identity/options to the public API roles. RLS controls
--- which active-product rows are visible; column grants keep exact stock private.
-revoke select on table public.product_variants from public, anon, authenticated;
+-- visible rows and authenticated writes; column grants keep exact stock private.
+revoke all privileges on table public.product_variants from public, anon, authenticated;
 revoke select (id, product_id, size, colour, stock_quantity)
   on table public.product_variants from public, anon, authenticated;
 grant select (id, product_id, size, colour)
   on table public.product_variants to anon, authenticated;
+grant insert, update, delete on table public.product_variants to authenticated;

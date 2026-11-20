@@ -1,7 +1,9 @@
 # EFCC News and Module Media Migration Plan
 
-This document contains proposed SQL only. It has not been executed and no migration
-file or live database object has been changed.
+The normalized `news_content_blocks` schema below remains a proposal. Migration
+`0006_player_cms.sql` now adds an RLS-protected `news_media_attachments` bridge for
+authorized News image delivery; it has not been executed, and the live database
+has not been changed.
 
 ## Why a migration is required
 
@@ -179,12 +181,12 @@ for existing Media Library objects.
 
 ## Required application switch
 
-After migration:
+For the current News media implementation:
 
-1. Persist `news_content_blocks` from the block editor.
-2. Keep `news.body` as a compatibility snapshot or remove it in a separate later migration.
-3. Switch `/api/news-media/{id}` to use block relations and Storage policies.
-4. Backfill existing plain-text article bodies as text blocks.
-5. Map existing `featured_image` values to legacy compatibility metadata; do not clear them.
-6. Test direct API reads, editor insert denial, media publishing denial, module upload denial,
-   public article image access, unpublishing, and media removal.
+1. Persist `news_media_attachments` only for an uploader's own unpublished News image.
+2. Keep `news.body` as the published-content check until a separate normalized block migration.
+3. Use the attachment relation and Storage RLS for `/api/news-media/{id}` delivery.
+4. Do not backfill unverified references; keep them private until reviewed.
+5. Test direct API reads, uploader-only News attachment insertion, editor publication/deletion
+   denial for general media, module namespace restrictions, public article image access,
+   unpublishing, and media removal.

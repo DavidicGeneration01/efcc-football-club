@@ -54,10 +54,10 @@ export function parsePlayerInput(formData: FormData): PlayerValidationResult {
   if (position.length > 80) return { success: false, message: "Position must be 80 characters or fewer." };
   if (nationality.length > 80) return { success: false, message: "Nationality must be 80 characters or fewer." };
   if (biography.length > 10000) return { success: false, message: "Biography must be 10,000 characters or fewer." };
-  if (!rosterStatuses.some(status => status === rosterStatusValue)) {
+  if (!isRosterStatus(rosterStatusValue)) {
     return { success: false, message: "Choose a valid current/former classification." };
   }
-  if (!saveIntents.some(intent => intent === intentValue)) {
+  if (!isPlayerSaveIntent(intentValue)) {
     return { success: false, message: "Choose a valid save or publish action." };
   }
 
@@ -71,16 +71,16 @@ export function parsePlayerInput(formData: FormData): PlayerValidationResult {
       position: position || null,
       nationality: nationality || null,
       biography: biography || null,
-      rosterStatus: rosterStatusValue as RosterStatus,
-      intent: intentValue as PlayerSaveIntent
+      rosterStatus: rosterStatusValue,
+      intent: intentValue
     }
   };
 }
 
 export function isRosterStatus(value: string): value is RosterStatus {
-  return rosterStatuses.some(status => status === value);
+  return (rosterStatuses as readonly string[]).includes(value);
 }
 
 export function isPlayerSaveIntent(value: string): value is PlayerSaveIntent {
-  return saveIntents.some(intent => intent === value);
+  return (saveIntents as readonly string[]).includes(value);
 }

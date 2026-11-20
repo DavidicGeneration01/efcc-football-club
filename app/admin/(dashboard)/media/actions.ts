@@ -274,6 +274,7 @@ export async function changeMediaPublicationAction(formData: FormData) {
     .select("id,published,uploaded_by")
     .eq("id", mediaId)
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .maybeSingle();
 
   if (readError) {
@@ -293,6 +294,7 @@ export async function changeMediaPublicationAction(formData: FormData) {
     .update({ published })
     .eq("id", mediaId)
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .eq("uploaded_by", authData.user.id)
     .select("id")
     .maybeSingle();

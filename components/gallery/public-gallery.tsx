@@ -17,6 +17,7 @@ export async function PublicGallery() {
     .from("media_items")
     .select("id,title,description,category,asset_url,created_at")
     .eq("media_type", "image")
+    .eq("usage_scope", "library")
     .eq("published", true)
     .not("asset_url", "is", null)
     .neq("asset_url", "")
