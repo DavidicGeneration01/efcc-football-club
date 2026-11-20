@@ -42,3 +42,9 @@ export function parseNewsContent(body: string): NewsContentBlock[] {
 
   return body ? [{ type: "text", text: body }] : [];
 }
+
+export function getNewsFeaturedImage(body: string, preferredMediaId?: string | null) {
+  const imageBlocks = parseNewsContent(body).filter((block): block is NewsImageBlock => block.type === "image");
+  const featuredBlock = imageBlocks.find(block => block.mediaId === preferredMediaId) ?? imageBlocks[0];
+  return featuredBlock ? `/api/news-media/${featuredBlock.mediaId}` : null;
+}

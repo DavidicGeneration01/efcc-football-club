@@ -4,12 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { newsStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
 import { createClient } from "@/lib/supabase/server";
+import { getNewsFeaturedImage } from "@/lib/news/content";
 import { isUuid, parseNewsArticleInput, parseNewsCategoryInput } from "@/lib/news/validation";
 
 export type NewsSaveState = {
   message: string;
   status: "idle" | "success" | "error";
 };
+
+function getSubmittedFeaturedImage(body: string, formData: FormData) {
+  const mediaId = formData.get("featuredMediaId");
+  return getNewsFeaturedImage(body, typeof mediaId === "string" ? mediaId : null);
+}
 
 function refreshNewsPaths(slugs: Array<string | null | undefined>) {
   revalidatePath("/");
@@ -51,6 +57,7 @@ export async function createNewsDraftAction(
       slug: input.slug,
       excerpt: input.excerpt,
       body: input.body,
+      featured_image: getSubmittedFeaturedImage(input.body, formData),
       category_id: input.categoryId,
       seo_title: input.seoTitle,
       seo_description: input.seoDescription,
@@ -106,6 +113,7 @@ export async function createAndPublishNewsAction(
       slug: input.slug,
       excerpt: input.excerpt,
       body: input.body,
+      featured_image: getSubmittedFeaturedImage(input.body, formData),
       category_id: input.categoryId,
       seo_title: input.seoTitle,
       seo_description: input.seoDescription,
@@ -156,7 +164,7 @@ export async function saveNewsDraftAction(
       excerpt: input.excerpt,
       body: input.body,
       category_id: input.categoryId,
-      featured_image: existing.featured_image,
+      featured_image: getSubmittedFeaturedImage(input.body, formData) ?? existing.featured_image,
       seo_title: input.seoTitle,
       seo_description: input.seoDescription,
       status: "draft",
@@ -206,7 +214,7 @@ export async function publishNewsArticleAction(
       excerpt: input.excerpt,
       body: input.body,
       category_id: input.categoryId,
-      featured_image: existing.featured_image,
+      featured_image: getSubmittedFeaturedImage(input.body, formData) ?? existing.featured_image,
       seo_title: input.seoTitle,
       seo_description: input.seoDescription,
       status: "published",

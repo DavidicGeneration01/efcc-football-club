@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { getNewsFeaturedImage } from "@/lib/news/content";
 
 const articleFields = "id,title,slug,excerpt,body,featured_image,category_id,status,is_featured,seo_title,seo_description,author_id,published_at,created_at,updated_at";
 const summaryFields = "id,title,slug,excerpt,featured_image,category_id,published_at";
@@ -78,6 +79,24 @@ async function loadCategories(ids: string[]) {
   return new Map(data.map(category => [category.id, category]));
 }
 
+async function addLegacyFeaturedImages<T extends { id: string; featured_image: string | null }>(articles: T[]) {
+  const missingImageIds = articles.filter(article => !article.featured_image).map(article => article.id);
+  if (!missingImageIds.length) return articles;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("news")
+    .select("id,body")
+    .in("id", missingImageIds);
+
+  if (error) throw new NewsQueryError(`Could not load legacy news images: ${error.message}`);
+  const bodies = new Map(data.map(article => [article.id, article.body]));
+  return articles.map(article => ({
+    ...article,
+    featured_image: article.featured_image ?? getNewsFeaturedImage(bodies.get(article.id) ?? "")
+  }));
+}
+
 export async function getPublishedNews(page = 1) {
   const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
   const from = (safePage - 1) * pageSize;
@@ -93,9 +112,10 @@ export async function getPublishedNews(page = 1) {
 
   if (error) throw new NewsQueryError(`Could not load published news: ${error.message}`);
 
-  const categories = await loadCategories(data.flatMap(article => article.category_id ?? []));
+  const articlesWithImages = await addLegacyFeaturedImages(data);
+  const categories = await loadCategories(articlesWithImages.flatMap(article => article.category_id ?? []));
   return {
-    articles: data.map(article => ({
+    articles: articlesWithImages.map(article => ({
       ...article,
       category: article.category_id ? categories.get(article.category_id) ?? null : null
     })),
@@ -118,8 +138,9 @@ export async function getLatestPublishedNews(limit = 3) {
     .limit(safeLimit);
 
   if (error) throw new NewsQueryError(`Could not load latest news: ${error.message}`);
-  const categories = await loadCategories(data.flatMap(article => article.category_id ?? []));
-  return data.map(article => ({
+  const articlesWithImages = await addLegacyFeaturedImages(data);
+  const categories = await loadCategories(articlesWithImages.flatMap(article => article.category_id ?? []));
+  return articlesWithImages.map(article => ({
     ...article,
     category: article.category_id ? categories.get(article.category_id) ?? null : null
   }));

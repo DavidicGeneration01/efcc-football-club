@@ -39,7 +39,18 @@ export function NewsArticleForm({
   categories: NewsCategory[];
   notice?: string;
 }) {
-  const [blocks, setBlocks] = useState<NewsContentBlock[]>(() => parseNewsContent(article.body));
+  const initialBlocks = parseNewsContent(article.body);
+  const [blocks, setBlocks] = useState<NewsContentBlock[]>(initialBlocks);
+  const [featuredMediaId, setFeaturedMediaId] = useState(() => {
+    const savedMediaId = article.featured_image?.match(/\/api\/(?:admin\/)?news-media\/([0-9a-f-]{36})$/i)?.[1];
+    const savedImage = initialBlocks.find((block): block is Extract<NewsContentBlock, { type: "image" }> =>
+      block.type === "image" && block.mediaId === savedMediaId
+    );
+    const firstImage = initialBlocks.find((block): block is Extract<NewsContentBlock, { type: "image" }> => block.type === "image");
+    return savedImage?.mediaId
+      ?? firstImage?.mediaId
+      ?? "";
+  });
   const [createDraftState, createDraftAction, createDraftPending] = useActionState(createNewsDraftAction, initialState);
   const [createPublishState, createPublishAction, createPublishPending] = useActionState(createAndPublishNewsAction, initialState);
   const [saveState, saveAction, savePending] = useActionState(saveNewsDraftAction, initialState);
@@ -76,7 +87,12 @@ export function NewsArticleForm({
   }
 
   function removeBlock(index: number) {
-    setBlocks(current => current.filter((_, blockIndex) => blockIndex !== index));
+    const removedBlock = blocks[index];
+    const nextBlocks = blocks.filter((_, blockIndex) => blockIndex !== index);
+    setBlocks(nextBlocks);
+    if (removedBlock?.type === "image" && removedBlock.mediaId === featuredMediaId) {
+      setFeaturedMediaId(nextBlocks.find((block): block is Extract<NewsContentBlock, { type: "image" }> => block.type === "image")?.mediaId ?? "");
+    }
   }
 
   return (
@@ -189,6 +205,7 @@ export function NewsArticleForm({
                 caption: "",
                 alt: fileName
               }]);
+              setFeaturedMediaId(mediaId);
             }}
           />
         </div>
@@ -215,6 +232,7 @@ export function NewsArticleForm({
           <>
             <form action={saveAction}>
               <input type="hidden" name="id" value={article.id} />
+              <input type="hidden" name="featuredMediaId" value={featuredMediaId} />
               <input type="hidden" name="title" value={title} />
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="excerpt" value={excerpt} />
@@ -229,6 +247,7 @@ export function NewsArticleForm({
             </form>
             <form action={publishAction}>
               <input type="hidden" name="id" value={article.id} />
+              <input type="hidden" name="featuredMediaId" value={featuredMediaId} />
               <input type="hidden" name="title" value={title} />
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="excerpt" value={excerpt} />
@@ -245,6 +264,7 @@ export function NewsArticleForm({
         ) : (
           <>
             <form action={createDraftAction}>
+              <input type="hidden" name="featuredMediaId" value={featuredMediaId} />
               <input type="hidden" name="title" value={title} />
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="excerpt" value={excerpt} />
@@ -258,6 +278,7 @@ export function NewsArticleForm({
               </button>
             </form>
             <form action={createPublishAction}>
+              <input type="hidden" name="featuredMediaId" value={featuredMediaId} />
               <input type="hidden" name="title" value={title} />
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="excerpt" value={excerpt} />
