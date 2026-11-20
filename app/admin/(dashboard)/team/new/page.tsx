@@ -16,7 +16,7 @@ export default async function NewPlayerPage() {
         Create the player record as a draft. After saving, upload the player photograph and preview the profile.
       </p>
       <div className="mt-7 border border-neutral-200 bg-white p-5 sm:p-8">
-        <PlayerForm player={null} />
+      <PlayerForm player={null} />
       </div>
     </div>
   );

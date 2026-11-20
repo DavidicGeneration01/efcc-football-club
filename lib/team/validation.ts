@@ -28,27 +28,33 @@ function readText(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function parseInteger(value: string) {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
 export function parsePlayerInput(formData: FormData): PlayerValidationResult {
   const idValue = readText(formData, "id");
   const fullName = readText(formData, "full_name");
   const suppliedSlug = readText(formData, "slug");
   const slug = slugify(suppliedSlug || fullName);
   const shirtNumberValue = readText(formData, "shirt_number");
+  const shirtNumber = parseInteger(shirtNumberValue);
   const position = readText(formData, "position");
   const nationality = readText(formData, "nationality");
   const biography = readText(formData, "biography");
   const rosterStatusValue = readText(formData, "roster_status");
   const intentValue = readText(formData, "intent");
-  const shirtNumber = shirtNumberValue ? Number(shirtNumberValue) : null;
 
   if (idValue && !isUuid(idValue)) return { success: false, message: "The player identifier is invalid." };
-  if (!fullName || fullName.length > 120) {
-    return { success: false, message: "Enter a player name of 1 to 120 characters." };
+  if (!fullName || fullName.length > 200) {
+    return { success: false, message: "Enter a player name of 1 to 200 characters." };
   }
   if (!slug || slug.length > 160 || !slugPattern.test(slug)) {
     return { success: false, message: "Enter a valid profile slug using letters, numbers, and hyphens." };
   }
-  if (shirtNumberValue && (!Number.isInteger(shirtNumber) || shirtNumber === null || shirtNumber < 0 || shirtNumber > 99)) {
+  if (shirtNumberValue && (shirtNumber === null || shirtNumber === undefined || shirtNumber < 0 || shirtNumber > 99)) {
     return { success: false, message: "Shirt number must be a whole number from 0 to 99." };
   }
   if (position.length > 80) return { success: false, message: "Position must be 80 characters or fewer." };
@@ -67,7 +73,7 @@ export function parsePlayerInput(formData: FormData): PlayerValidationResult {
       id: idValue || null,
       fullName,
       slug,
-      shirtNumber,
+      shirtNumber: shirtNumber === undefined ? null : shirtNumber,
       position: position || null,
       nationality: nationality || null,
       biography: biography || null,

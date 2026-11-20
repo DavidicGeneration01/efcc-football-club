@@ -18,7 +18,12 @@ export function SharedMediaUpload({
   moduleName: "news" | "team" | "matches" | "club" | "honours" | "store";
   articleId?: string;
   playerId?: string;
-  onUploaded?: (media: { mediaId: string; assetUrl: string; previewUrl: string; fileName: string }) => void;
+  onUploaded?: (media: {
+    mediaId: string;
+    assetUrl: string;
+    previewUrl: string;
+    fileName: string;
+  }) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");

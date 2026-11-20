@@ -12,7 +12,7 @@ export function MediaUploadForm() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [localError, setLocalError] = useState("");
-  const [status, setStatus] = useState<"draft" | "published">("draft");
+  const [status, setStatus] = useState<"draft" | "published">("published");
   const [state, formAction, pending] = useActionState(uploadMediaAction, initialMediaUploadState);
   const formRef = useRef<HTMLFormElement>(null);
   let submitLabel = status === "published" ? "Upload and publish" : "Upload draft";
@@ -24,7 +24,7 @@ export function MediaUploadForm() {
     if (state.status === "success") {
       formRef.current?.reset();
       setFile(null);
-      setStatus("draft");
+      setStatus("published");
     }
   }, [state]);
 

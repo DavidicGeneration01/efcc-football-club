@@ -21,15 +21,29 @@ export type PlayerRecord = {
   publication_status: PlayerPublicationStatus;
   published_at: string | null;
   archived_at: string | null;
-  archived_by: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type PublicPlayerRecord = Omit<PlayerRecord, "archived_by">;
+export type PublicPlayerRecord = Pick<
+  PlayerRecord,
+  | "id"
+  | "full_name"
+  | "slug"
+  | "shirt_number"
+  | "position"
+  | "nationality"
+  | "biography"
+  | "photo_url"
+  | "photo_media_id"
+  | "is_active"
+  | "roster_status"
+  | "publication_status"
+  | "published_at"
+>;
 
-const adminPlayerFields = "id,full_name,slug,shirt_number,position,nationality,biography,photo_url,photo_media_id,is_active,roster_status,publication_status,published_at,archived_at,archived_by,created_at,updated_at";
-const publicPlayerFields = "id,full_name,slug,shirt_number,position,nationality,biography,photo_url,photo_media_id,is_active,roster_status,publication_status,published_at,archived_at,created_at,updated_at";
+const adminPlayerFields = "id,full_name,slug,shirt_number,position,nationality,biography,photo_url,photo_media_id,is_active,roster_status,publication_status,published_at,archived_at,created_at,updated_at";
+const publicPlayerFields = "id,full_name,slug,shirt_number,position,nationality,biography,photo_url,photo_media_id,is_active,roster_status,publication_status,published_at";
 
 export class PlayerQueryError extends Error {
   constructor(message: string) {
@@ -79,6 +93,39 @@ export async function getAdminPlayers({
   };
 }
 
+export async function getAdminPlayerPhotoUrls(players: PlayerRecord[]) {
+  const mediaIds = players
+    .map(player => player.photo_media_id)
+    .filter((id): id is string => Boolean(id));
+  if (!mediaIds.length) return new Map<string, string>();
+
+  const supabase = await createClient();
+  const { data: mediaItems, error } = await supabase
+    .from("media_items")
+    .select("id,storage_path")
+    .in("id", mediaIds)
+    .eq("usage_scope", "player_photo")
+    .eq("media_type", "image");
+  if (error) throw new PlayerQueryError(`Could not load player photo previews: ${error.message}`);
+
+  const photoUrls = new Map<string, string>();
+  const results = await Promise.all((mediaItems ?? []).map(async media => {
+    if (!media.storage_path) return null;
+    const { data, error: signedError } = await supabase.storage
+      .from("efcc-media")
+      .createSignedUrl(media.storage_path, 120);
+    if (signedError) {
+      console.error(`Could not create an admin preview for player media ${media.id}.`, signedError);
+      return null;
+    }
+    return [media.id, data.signedUrl] as const;
+  }));
+  for (const result of results) {
+    if (result) photoUrls.set(result[0], result[1]);
+  }
+  return photoUrls;
+}
+
 export async function getAdminPlayer(id: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -98,6 +145,7 @@ export async function getPublishedPlayers(rosterStatus: "current" | "former") {
     .select(publicPlayerFields)
     .eq("publication_status", "published")
     .eq("roster_status", rosterStatus)
+    .eq("is_active", rosterStatus === "current")
     .is("archived_at", null)
     .order("shirt_number", { ascending: true, nullsFirst: false })
     .order("full_name", { ascending: true });
@@ -118,7 +166,9 @@ export async function getPublishedPlayerBySlug(slug: string) {
     .maybeSingle();
 
   if (error) throw new PlayerQueryError(`Could not load the player profile: ${error.message}`);
-  return data as PublicPlayerRecord | null;
+  if (!data) return null;
+  if ((data.roster_status === "current") !== data.is_active) return null;
+  return data as PublicPlayerRecord;
 }
 
 export const PLAYER_PAGE_SIZE = pageSize;

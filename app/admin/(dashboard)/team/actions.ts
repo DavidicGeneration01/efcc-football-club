@@ -15,6 +15,7 @@ function refreshPlayerPaths(slug?: string) {
   revalidatePath("/admin/team");
   revalidatePath("/team");
   revalidatePath("/team/former");
+  revalidatePath("/first-team");
   if (slug) revalidatePath(`/team/${slug}`);
 }
 
@@ -114,6 +115,7 @@ export async function savePlayerAction(
   }
 
   if (!playerId) return { status: "error", message: "The player record could not be identified after saving." };
+
   refreshPlayerPaths(previousSlug ?? undefined);
   refreshPlayerPaths(input.slug);
 
@@ -126,6 +128,36 @@ async function readPlayerId(formData: FormData) {
     redirect("/admin/team?notice=invalid");
   }
   return id;
+}
+
+export async function removePlayerPhotoAction(formData: FormData) {
+  await requireStaffRole(newsStaffRoles, "/admin");
+  const id = await readPlayerId(formData);
+  const supabase = await createClient();
+  const { data: player, error: readError } = await supabase
+    .from("players")
+    .select("slug")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError) {
+    console.error("Could not load the player before removing its photograph.", readError);
+    redirect(`/admin/team/${id}/edit?notice=photo-error`);
+  }
+  if (!player) redirect("/admin/team?notice=not-found");
+
+  const { data: updated, error: updateError } = await supabase
+    .from("players")
+    .update({ photo_media_id: null, photo_url: null, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (updateError || !updated) {
+    console.error("Could not remove the player photograph association.", updateError);
+    redirect(`/admin/team/${id}/edit?notice=photo-error`);
+  }
+
+  refreshPlayerPaths(player.slug);
+  redirect(`/admin/team/${id}/edit?notice=photo-removed`);
 }
 
 export async function archivePlayerAction(formData: FormData) {

@@ -152,7 +152,8 @@ export async function uploadMediaAction(
       asset_url: publicUrl,
       storage_path: uploaded.path,
       uploaded_by: authData.user.id,
-      published: status === "published"
+      published: status === "published",
+      usage_scope: "library"
     });
 
     if (insertError) {

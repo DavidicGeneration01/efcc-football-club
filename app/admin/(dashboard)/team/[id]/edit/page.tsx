@@ -22,8 +22,8 @@ export default async function EditPlayerPage({
   if (!player) notFound();
 
   let photoPreviewUrl: string | null = null;
+  const supabase = await createClient();
   if (player.photo_media_id) {
-    const supabase = await createClient();
     const { data: media, error: mediaError } = await supabase
       .from("media_items")
       .select("storage_path")
@@ -72,7 +72,11 @@ export default async function EditPlayerPage({
         )}
       </div>
       <div className="mt-7 border border-neutral-200 bg-white p-5 sm:p-8">
-        <PlayerForm player={player} photoPreviewUrl={photoPreviewUrl} notice={notice} />
+        <PlayerForm
+          player={player}
+          photoPreviewUrl={photoPreviewUrl}
+          notice={notice}
+        />
       </div>
     </div>
   );

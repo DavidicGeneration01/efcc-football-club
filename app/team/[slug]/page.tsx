@@ -1,11 +1,39 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { PlayerProfileView } from "@/components/team/player-components";
 import { getPublishedPlayerBySlug } from "@/lib/team/queries";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const player = await getPublishedPlayerBySlug(slug);
+  if (!player) return { title: "Player profile not found" };
+
+  const title = `${player.full_name} | EFCC First Team`;
+  const description = player.biography || `Official EFCC Football Club player profile for ${player.full_name}.`;
+  const image = player.photo_media_id ? `/api/team-media/${player.photo_media_id}` : undefined;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/team/${player.slug}` },
+    openGraph: {
+      title,
+      description,
+      type: "profile",
+      url: `/team/${player.slug}`,
+      ...(image ? { images: [{ url: image, alt: `${player.full_name} portrait` }] } : {})
+    }
+  };
+}
 
 export default async function PlayerProfilePage({
   params

@@ -28,7 +28,7 @@ export default async function FormerPlayersPage() {
               Back to First Team
             </Link>
             {players.length ? (
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {players.map(player => <PlayerCard key={player.id} player={player} />)}
               </div>
             ) : (

@@ -1,7 +1,8 @@
+import Image from "next/image";
 import Link from "next/link";
 import { archivePlayerAction, restorePlayerAction } from "@/app/admin/(dashboard)/team/actions";
 import { newsStaffRoles, requireStaffRole } from "@/lib/auth/require-staff-role";
-import { getAdminPlayers, PLAYER_PAGE_SIZE, type PlayerListFilter } from "@/lib/team/queries";
+import { getAdminPlayerPhotoUrls, getAdminPlayers, PLAYER_PAGE_SIZE, type PlayerListFilter } from "@/lib/team/queries";
 
 const filters = ["all", "current", "former", "needs_review", "draft", "published", "archived"] as const satisfies readonly PlayerListFilter[];
 const filterSet: ReadonlySet<string> = new Set(filters);
@@ -42,6 +43,7 @@ export default async function AdminTeamPage({
   const search = (params.q ?? "").slice(0, 100);
   const page = safePage(params.page);
   const { players, total } = await getAdminPlayers({ search, filter, page });
+  const photoUrls = await getAdminPlayerPhotoUrls(players);
   const totalPages = Math.max(1, Math.ceil(total / PLAYER_PAGE_SIZE));
   const notice = params.notice ? notices[params.notice] : undefined;
 
@@ -100,27 +102,36 @@ export default async function AdminTeamPage({
       {players.length ? (
         <div className="mt-4 space-y-3">
           {players.map(player => (
-            <article key={player.id} className="flex flex-col gap-4 border border-neutral-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="break-words text-lg font-bold">{player.full_name}</h2>
-                  {[
-                    player.roster_status.replace("_", " "),
-                    player.publication_status,
-                    ...(player.archived_at ? ["archived"] : [])
-                  ].map(status => (
-                    <span key={status} className="border border-neutral-200 bg-neutral-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                      {status}
-                    </span>
-                  ))}
+            <article key={player.id} className="flex flex-col gap-4 border border-neutral-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="relative size-16 shrink-0 overflow-hidden bg-neutral-100">
+                  {player.photo_media_id && photoUrls.has(player.photo_media_id) ? (
+                    <Image src={photoUrls.get(player.photo_media_id)!} alt={`${player.full_name} portrait`} fill unoptimized sizes="64px" className="object-cover" />
+                  ) : (
+                    <span className="flex h-full items-center justify-center text-[10px] font-bold uppercase text-neutral-400">No photo</span>
+                  )}
                 </div>
-                <p className="mt-1 text-sm text-neutral-500">
-                  {player.position || "Position not provided"}
-                  {player.shirt_number !== null ? ` · #${player.shirt_number}` : ""}
-                  {player.nationality ? ` · ${player.nationality}` : ""}
-                </p>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="break-words text-lg font-bold">{player.full_name}</h2>
+                    {[
+                      player.roster_status.replace("_", " "),
+                      player.publication_status,
+                      ...(player.archived_at ? ["archived"] : [])
+                    ].map(status => (
+                      <span key={status} className="border border-neutral-200 bg-neutral-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+                        {status}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-sm text-neutral-500">
+                    {player.position || "Position not provided"}
+                    {player.shirt_number !== null ? ` · #${player.shirt_number}` : ""}
+                    {player.nationality ? ` · ${player.nationality}` : ""}
+                  </p>
+                </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                 <Link href={`/admin/team/${player.id}/edit`} className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#b51f17] hover:bg-red-50">
                   Edit
                 </Link>

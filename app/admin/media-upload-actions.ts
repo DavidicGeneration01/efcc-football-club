@@ -76,6 +76,10 @@ async function cleanupModuleUpload({
         return { success: false, message: "The upload is no longer an owned, unpublished module asset; it was retained." };
       }
 
+      if (scope === "player_photo") {
+        return { success: false, message: "The private player-photo asset was retained; automatic cleanup is not available in the current schema." };
+      }
+
       const { data: deletedMedia, error: deleteError } = await supabase
         .from("media_items")
         .delete()
@@ -151,10 +155,11 @@ export async function uploadModuleMediaAction(
     return { status: "error", message: "Your staff session could not be verified. Sign in again and retry." };
   }
 
+  let previousPlayerPhotoId: string | null = null;
   if (moduleName === "team" && playerId) {
     const { data: player, error: playerError } = await supabase
       .from("players")
-      .select("id")
+      .select("id,photo_media_id")
       .eq("id", playerId)
       .is("archived_at", null)
       .maybeSingle();
@@ -163,6 +168,7 @@ export async function uploadModuleMediaAction(
       return { status: "error", message: `The player could not be verified: ${playerError.message}` };
     }
     if (!player) return { status: "error", message: "The player was not found or is archived." };
+    previousPlayerPhotoId = player.photo_media_id;
   }
 
   const mediaId = randomUUID();
@@ -242,7 +248,7 @@ export async function uploadModuleMediaAction(
       if (!verifyError && verifiedPlayer?.photo_media_id === mediaId) {
         return {
           status: "success",
-          message: "Player photograph was associated despite an interrupted response.",
+          message: `Player photograph was associated despite an interrupted response.${previousPlayerPhotoId ? " The previous private photo was retained." : ""}`,
           mediaId,
           assetUrl: playerPhotoUrl,
           previewUrl: signed.signedUrl
@@ -272,7 +278,7 @@ export async function uploadModuleMediaAction(
 
     return {
       status: "success",
-      message: "Player photograph uploaded and associated.",
+      message: `Player photograph uploaded and associated.${previousPlayerPhotoId ? " The previous private photo was retained." : ""}`,
       mediaId,
       assetUrl: playerPhotoUrl,
       previewUrl: signed.signedUrl

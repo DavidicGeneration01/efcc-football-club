@@ -79,11 +79,18 @@ are surfaced.
 **Dependencies:** CMS authorization/data patterns from Phase 6; confirmed club
 data and competitions requirements.
 
-**Work:** Build managers and public lists/details with server-side pagination
-where needed. Add statistics/events only after the data model is approved.
+**Work:** The First Team module uses the existing `/admin/team` navigation and
+`/team` public routes, with `/first-team` as a redirect alias. No schema
+expansion is required: the application uses the existing `full_name`,
+`shirt_number`, biography, lifecycle, archive, and Media Library fields.
+Player photos continue to use the private EFCC Media Library relationship.
+Matches and transfers remain separate work.
 
-**Acceptance:** Public views expose only approved active/published records;
-staff roles are enforced server-side and by RLS; no fabricated content.
+**Acceptance:** Do not mark the player system complete until the application is
+tested against the intended existing schema, RLS and Storage workflows have
+been verified there, and lint/typecheck/build and responsive checks pass.
+Public views expose only published, non-archived eligible players; no
+fabricated player information is permitted.
 
 ## Phase 8 — Galleries, video centre, and live streaming
 

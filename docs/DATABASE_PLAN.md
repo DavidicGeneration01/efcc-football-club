@@ -2,8 +2,8 @@
 
 ## Current local schema
 
-The only inspected migration is
-`supabase/migrations/0001_initial.sql`. It defines these 14 application tables:
+The base schema in `supabase/migrations/0001_initial.sql` defines these 14
+application tables:
 
 | Table | Purpose and notable relationships |
 |---|---|
@@ -11,10 +11,10 @@ The only inspected migration is
 | `user_roles` | One role per auth user; controlled role allow-list. |
 | `news_categories` | Unique category name and slug. |
 | `news` | Article fields, category (`SET NULL`), auth author (`SET NULL`), content status and publication time. |
-| `players` | Squad identity and biography fields; active flag. |
+| `players` | Base squad identity; 0006 adds publication/archive state and the central Media Library association. |
 | `matches` | Opponent, kickoff, venue, score/status, report, and publication flag. |
 | `transfers` | Player name, transfer type, status, announcement details. |
-| `media_items` | Image/video/live metadata and publication flag; no gallery relation. |
+| `media_items` | Image/video/live metadata; later migrations add storage ownership and usage scope. |
 | `trophies` | Achievement metadata and publication flag. |
 | `products` | Product fields, NGN price, image URL array, active flag. |
 | `product_variants` | Product variants, size/colour and stock; product delete cascades. |
@@ -42,14 +42,16 @@ role hierarchy by itself: each policy explicitly lists roles.
 
 RLS is enabled on every application table:
 
-- Public reads: published news whose `published_at <= now()`, categories, active
-  players, published matches, published transfers, published media, published
+- Public reads: published news whose `published_at <= now()`, categories,
+  published non-archived current/former players, published matches, published transfers, published media, published
   trophies, active products, variants of active products, and only the
   `club_name`, `club_location`, and `social_links` settings.
 - Staff writes: news/categories/players/matches/transfers/trophies for
   super-admin/admin/editor; media for super-admin/admin/media-manager;
   products/variants/orders/order-items for super-admin/admin/shop-manager;
   settings for super-admin/admin.
+- Player records are archived/restored rather than permanently deleted by the
+  application; editors can manage player details and publication state.
 - Profiles: authenticated users can select/update their own profile.
 - Roles: authenticated users can select their own role; no client role writes.
 - Orders and order items have no public/customer policy. The migration comment
@@ -97,6 +99,21 @@ Other schema decisions to resolve before the corresponding feature:
   bounds, and publication consistency where required.
 - Decide whether deleted products/orders should be retained for audit rather
   than cascade deletion.
+
+## First Team player CMS
+
+The current application uses the existing `players` schema: `full_name`,
+`shirt_number`, `position`, `nationality`, `biography`, `photo_url`,
+`photo_media_id`, `is_active`, roster/publication status, and archive fields.
+Player photographs continue to use the central Media Library and the existing
+private `efcc-media` Storage bucket. No additional player columns or child
+tables are required for these workflows.
+
+The application does not split `full_name` into assumed first/last names,
+does not create another image store, and does not permanently delete player
+records. Staff archive/restore actions preserve existing IDs, slugs, and media
+relationships. Public application queries filter by publication status,
+archive state, roster classification, and the corresponding `is_active` value.
 
 ## Master brief entities not represented yet
 

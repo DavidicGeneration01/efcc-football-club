@@ -13,7 +13,7 @@ export async function GET(
   const supabase = await createClient();
   const { data: player, error: playerError } = await supabase
     .from("players")
-    .select("id")
+    .select("id,is_active,roster_status")
     .eq("photo_media_id", id)
     .eq("publication_status", "published")
     .in("roster_status", ["current", "former"])
@@ -28,6 +28,9 @@ export async function GET(
     });
   }
   if (!player) return new Response("Not found", { status: 404 });
+  if ((player.roster_status === "current") !== player.is_active) {
+    return new Response("Not found", { status: 404 });
+  }
 
   const { data: media, error: mediaError } = await supabase
     .from("media_items")
